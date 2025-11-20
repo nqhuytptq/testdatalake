@@ -1,0 +1,23 @@
+@import "react-day-picker/dist/style.css";
+
+.rdp {
+  --rdp-cell-size: 36px;
+  --rdp-spacing: 0;
+  --rdp-accent-color: #dc2626;
+  --rdp-background-color: #f1f5f9;
+  margin: 0;
+}
+
+.rdp-root {
+  padding: 8px;
+}
+
+.rdp-day_selected,
+.rdp-day_selected:hover {
+  background-color: #dc2626 !important;
+  color: white !important;
+}
+
+.rdp-button_reset {
+  cursor: pointer;
+}
