@@ -20,10 +20,10 @@ const bucketName = 'thingsboard-data';
 
 // Đảm bảo bucket tồn tại
 minioClient.bucketExists(bucketName, (err, exists) => {
-  if (err) return console.error('❌ Lỗi kiểm tra bucket:', err);
+  if (err) return console.error('Lỗi kiểm tra bucket:', err);
   if (!exists) {
     minioClient.makeBucket(bucketName, 'us-east-1', (err) => {
-      if (err) return console.error('❌ Không tạo được bucket:', err);
+      if (err) return console.error('Không tạo được bucket:', err);
       console.log('✅ Đã tạo bucket:', bucketName);
     });
   } else {
@@ -45,7 +45,7 @@ const db = mysql.createConnection({
 
 db.connect(err => {
   if (err) {
-    console.error('❌ Lỗi kết nối MySQL:', err);
+    console.error('Lỗi kết nối MySQL:', err);
   } else {
     console.log('✅ Kết nối MySQL thành công!');
   }
@@ -81,7 +81,7 @@ app.post('/api/register', (req, res) => {
     const checkQuery = 'SELECT id FROM users WHERE username = ? OR email = ?';
     db.query(checkQuery, [username, email], (err, result) => {
       if (err) {
-        console.error('❌ Lỗi kiểm tra user:', err);
+        console.error('Lỗi kiểm tra user:', err);
         return res.status(500).json({ message: 'Lỗi hệ thống khi kiểm tra người dùng.' });
       }
 
@@ -100,7 +100,7 @@ app.post('/api/register', (req, res) => {
 
       db.query(insertQuery, [username, hashedPassword, name, email, phone || null], (err2) => {
         if (err2) {
-          console.error('❌ Lỗi khi thêm user:', err2);
+          console.error('Lỗi khi thêm user:', err2);
           return res.status(500).json({ message: 'Lỗi hệ thống khi thêm người dùng.' });
         }
 
@@ -111,7 +111,7 @@ app.post('/api/register', (req, res) => {
       });
     });
   } catch (error) {
-    console.error('❌ Lỗi ngoại lệ ngoài try:', error);
+    console.error('Lỗi ngoại lệ ngoài try:', error);
     return res.status(500).json({ message: 'Lỗi không xác định từ server.' });
   }
 });
@@ -136,7 +136,7 @@ app.post('/api/login', (req, res) => {
 
   db.query(query, [username, hashedPassword], (err, results) => {
     if (err) {
-      console.error('❌ Lỗi truy vấn MySQL:', err);
+      console.error('Lỗi truy vấn MySQL:', err);
       return res.status(500).json({ message: 'Lỗi hệ thống khi đăng nhập.' });
     }
 
@@ -186,7 +186,7 @@ app.post('/api/add-device', (req, res) => {
   `;
   db.query(sql, [name, device_id, description || null, device_type_id, api_key, user_id], (err, result) => {
     if (err) {
-      console.error('❌ Lỗi thêm thiết bị:', err);
+      console.error(' Lỗi thêm thiết bị:', err);
       if (err.code === 'ER_DUP_ENTRY')
         return res.status(400).json({ message: 'Mã thiết bị bị trùng. Vui lòng nhập mã khác.' });
       return res.status(500).json({ message: 'Không thể thêm thiết bị.' });
@@ -207,7 +207,7 @@ app.post('/api/devices/:id/reset-key', (req, res) => {
   const sql = `UPDATE devices SET api_key = ?, updateAt = NOW() WHERE id = ?`;
   db.query(sql, [newKey, id], (err, result) => {
     if (err) {
-      console.error('❌ Lỗi reset key:', err);
+      console.error(' Lỗi reset key:', err);
       return res.status(500).json({ message: 'Không thể reset API key.' });
     }
 
@@ -240,7 +240,7 @@ app.get('/api/devices', (req, res) => {
 
   db.query(sql, (err, results) => {
     if (err) {
-      console.error('❌ Lỗi lấy danh sách thiết bị:', err);
+      console.error(' Lỗi lấy danh sách thiết bị:', err);
       return res.status(500).json({ message: 'Không thể tải danh sách thiết bị.' });
     }
     res.json({ status: 'success', devices: results });
@@ -292,7 +292,7 @@ app.post("/api/device/upload", async (req, res) => {
       message: "Đã ghi dữ liệu theo thiết bị và sensor!",
     });
   } catch (err) {
-    console.error("❌ Lỗi upload:", err);
+    console.error(" Lỗi upload:", err);
     res.status(500).json({ message: "Upload failed" });
   }
 });
@@ -510,6 +510,165 @@ async function readJSON(path) {
   }
 }
 
+// ===========Lưu filter mới===========
+app.post("/api/export_filters", (req, res) => {
+  const { user_id, filter_name, filter_json } = req.body;
+
+  if (!user_id || !filter_json)
+    return res.status(400).json({ error: "Missing fields" });
+
+  const sql = `
+    INSERT INTO export_filters (user_id, filter_name, filter_json, createAt)
+    VALUES (?, ?, ?, NOW())
+  `;
+
+  db.query(sql, [user_id, filter_name, JSON.stringify(filter_json)], (err, result) => {
+    if (err) {
+      console.error("SQL error:", err);
+      return res.status(500).json({ error: err });
+    }
+    res.json({ success: true, id: result.insertId });
+  });
+});
+
+
+// lấy danh sách
+app.get("/api/export_filters/:uid", (req, res) => {
+  const uid = req.params.uid;
+
+  const sql = `
+      SELECT id, user_id, filter_name, filter_json, createAt
+      FROM export_filters
+      WHERE user_id = ?
+      ORDER BY createAt DESC
+  `;
+
+  db.query(sql, [uid], (err, rows) => {
+  if (err) return res.status(500).json({ error: "DB error" });
+
+  const parsed = rows.map(r => {
+    let json = {};
+    try {
+      json = r.filter_json ? JSON.parse(r.filter_json) : {};
+    } catch (e) {
+      json = {};
+    }
+    return { ...r, filter_json: json };
+  });
+
+  res.json(parsed);
+});
+
+});
+
+
+// xem lại dataset từ db
+app.get("/api/export_filters/:id/dataset", async (req, res) => {
+  const sql = `SELECT * FROM export_filters WHERE id = ?`;
+
+  db.query(sql, [req.params.id], async (err, rows) => {
+    if (err) return res.status(500).json({ error: err });
+    if (!rows.length) return res.status(404).json({ error: "Filter not found" });
+
+    let filter = JSON.parse(rows[0].filter_json);
+
+    // ⭐ CHỈ GIỮ LẠI GIÁ TRỊ HỢP LỆ ⭐
+    const valid = {};
+    for (const key in filter) {
+      if (filter[key] && filter[key] !== "all") {
+        valid[key] = filter[key];
+      }
+    }
+
+    const datasetUrl =
+      `http://localhost:5000/api/dataset?` + new URLSearchParams(valid);
+
+    try {
+      const response = await fetch(datasetUrl);
+      const jsonData = await response.json();
+      return res.json(jsonData);
+    } catch (err) {
+      console.error(" Dataset fetch error:", err);
+      return res.status(500).json({ error: "Dataset fetch failed" });
+    }
+  });
+});
+
+// tải lại csv
+app.get("/api/export_filters/:id/export_csv", async (req, res) => {
+  const sql = `SELECT * FROM export_filters WHERE id = ?`;
+
+  db.query(sql, [req.params.id], async (err, rows) => {
+    if (err) return res.status(500).send("Server error");
+    if (!rows.length) return res.status(404).send("Filter not found");
+
+    let filter = JSON.parse(rows[0].filter_json);
+
+    // ⭐ CHỈ GIỮ LẠI GIÁ TRỊ HỢP LỆ ⭐
+    const valid = {};
+    for (const key in filter) {
+      if (filter[key] && filter[key] !== "all") {
+        valid[key] = filter[key];
+      }
+    }
+
+    const datasetUrl =
+      `http://localhost:5000/api/dataset?` + new URLSearchParams(valid);
+
+    try {
+      const response = await fetch(datasetUrl);
+      const jsonData = await response.json();
+
+      let rowsCSV = [];
+      if (jsonData.data) rowsCSV.push(...jsonData.data);
+      if (jsonData.sensors)
+        Object.values(jsonData.sensors).forEach(a => rowsCSV.push(...a));
+      if (jsonData.devices)
+        Object.values(jsonData.devices).forEach(a => rowsCSV.push(...a));
+
+      let csv = "timestamp,device_id,sensor,value\n";
+      csv += rowsCSV
+        .map(r => `${r.timestamp},${r.device_id},${r.sensor},${r.value}`)
+        .join("\n");
+
+      // ⭐ LẤY TÊN FILE GỐC TỪ DB ⭐
+      const fileName = rows[0].filter_name || "dataset.csv";
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${fileName}"`
+      );
+
+      res.send(csv);
+
+    } catch (err) {
+      console.error(" Export CSV error:", err);
+      return res.status(500).send("Export failed");
+    }
+  });
+});
+
+// xóa lịch sử
+app.delete("/api/export_filters/:id", (req, res) => {
+  const id = req.params.id;
+
+  const sql = `DELETE FROM export_filters WHERE id = ?`;
+
+  db.query(sql, [id], (err, result) => {
+    if (err) {
+      console.error(" Lỗi xóa lịch sử:", err);
+      return res.status(500).json({ error: "Delete failed" });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "History not found" });
+    }
+
+    return res.json({ success: true, message: "Đã xóa lịch sử!" });
+  });
+});
+
 
 // ================== API: TỔNG HỢP==================
 
@@ -568,7 +727,7 @@ app.get('/api/merge', async (req, res) => {
         dataset.total++;
 
       } catch (e) {
-        console.log("❌ JSON lỗi:", fileName);
+        console.log(" JSON lỗi:", fileName);
       }
     }
 
@@ -592,7 +751,7 @@ app.get('/api/device-types', (req, res) => {
   const sql = `SELECT id, name, description FROM device_types ORDER BY id ASC`;
   db.query(sql, (err, results) => {
     if (err) {
-      console.error('❌ Lỗi lấy danh sách device_types:', err);
+      console.error(' Lỗi lấy danh sách device_types:', err);
       return res.status(500).json({ message: 'Không thể lấy danh sách loại thiết bị.' });
     }
     res.json({ status: 'success', device_types: results });
@@ -610,7 +769,7 @@ app.delete('/api/devices/:device_id', (req, res) => {
   const sql = 'DELETE FROM devices WHERE device_id = ?';
   db.query(sql, [device_id], (err, result) => {
     if (err) {
-      console.error('❌ Lỗi khi xóa thiết bị:', err);
+      console.error(' Lỗi khi xóa thiết bị:', err);
       return res.status(500).json({ status: 'error', message: 'Lỗi hệ thống khi xóa thiết bị.' });
     }
 
