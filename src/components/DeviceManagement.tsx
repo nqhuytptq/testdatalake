@@ -20,6 +20,13 @@ export function DeviceManagement() {
   const [devices, setDevices] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline' | 'warning'>('all');
+  const [provinces, setProvinces] = useState<any[]>([]);
+  const [districts, setDistricts] = useState<any[]>([]);
+  const [wards, setWards] = useState<any[]>([]);
+
+  const [selectedProvince, setSelectedProvince] = useState<any | null>(null);
+  const [selectedDistrict, setSelectedDistrict] = useState<any | null>(null);
+  const [selectedWard, setSelectedWard] = useState<any | null>(null);
 
   const [newDevice, setNewDevice] = useState({
     name: '',
@@ -27,13 +34,62 @@ export function DeviceManagement() {
     user_id: '',
     description: '',
     device_type_id: '',
+    location: '',
   });
+
 
   // ================= FETCH =================
   useEffect(() => {
     fetchDevices();
     fetchDeviceTypes();
+    fetchProvinces();
   }, []);
+
+const fetchProvinces = async () => {
+  try {
+    const res = await axios.get('https://provinces.open-api.vn/api/p/');
+    setProvinces(res.data || []);
+  } catch (err) {
+    console.error('Lỗi tải danh sách tỉnh:', err);
+  }
+};
+
+const handleProvinceChange = async (code: string) => {
+  const p = provinces.find((item) => String(item.code) === code) || null;
+  setSelectedProvince(p);
+  setSelectedDistrict(null);
+  setSelectedWard(null);
+  setDistricts([]);
+  setWards([]);
+
+  try {
+    const res = await axios.get(`https://provinces.open-api.vn/api/p/${code}?depth=2`);
+    setDistricts(res.data?.districts || []);
+  } catch (err) {
+    console.error('Lỗi tải quận/huyện:', err);
+  }
+};
+
+const handleDistrictChange = async (code: string) => {
+  const d = districts.find((item) => String(item.code) === code) || null;
+  setSelectedDistrict(d);
+  setSelectedWard(null);
+  setWards([]);
+
+  try {
+    const res = await axios.get(`https://provinces.open-api.vn/api/d/${code}?depth=2`);
+    setWards(res.data?.wards || []);
+  } catch (err) {
+    console.error('Lỗi tải xã/phường:', err);
+  }
+};
+
+const handleWardChange = (code: string) => {
+  const w = wards.find((item) => String(item.code) === code) || null;
+  setSelectedWard(w);
+};
+
+
 
   const fetchDeviceTypes = async () => {
     try {
@@ -54,31 +110,57 @@ export function DeviceManagement() {
   };
 
   // ================= THÊM THIẾT BỊ =================
-  const handleAddDevice = async () => {
-    try {
-      setFormError('');
-      if (!newDevice.name || !newDevice.device_id || !newDevice.device_type_id) {
-        setFormError('⚠️ Vui lòng nhập đủ thông tin bắt buộc.');
-        return;
-      }
-
-      await axios.post('http://localhost:5000/api/add-device', {
-        ...newDevice,
-        user_id: 1,
-      });
-
-      alert('✅ Thêm thiết bị thành công!');
-      setIsOpen(false);
-      setNewDevice({ name: '', device_id: '', user_id: '', description: '', device_type_id: '' });
-      fetchDevices();
-    } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        (err?.response?.status === 500 ? 'Lỗi server, vui lòng thử lại.' : 'Không thể thêm thiết bị.');
-      setFormError(msg);
-      setTimeout(() => setFormError(''), 4000);
+const handleAddDevice = async () => {
+  try {
+    setFormError('');
+    if (!newDevice.name || !newDevice.device_id || !newDevice.device_type_id) {
+      setFormError('⚠️ Vui lòng nhập đủ thông tin bắt buộc.');
+      return;
     }
-  };
+
+    // 👇 Ghép chuỗi địa chỉ từ 3 cấp
+    const provinceName = selectedProvince?.name || '';
+    const districtName = selectedDistrict?.name || '';
+    const wardName = selectedWard?.name || '';
+
+    const locationString = [wardName, districtName, provinceName]
+      .filter(Boolean)
+      .join(', ');
+
+    await axios.post('http://localhost:5000/api/add-device', {
+      ...newDevice,
+      user_id: 1,
+      location: locationString || newDevice.location || null,
+      province: selectedProvince?.name || null,
+      district: selectedDistrict?.name || null,
+      ward: selectedWard?.name || null
+    });
+
+    alert('✅ Thêm thiết bị thành công!');
+    setIsOpen(false);
+    setNewDevice({
+      name: '',
+      device_id: '',
+      user_id: '',
+      description: '',
+      device_type_id: '',
+      location: '',
+    });
+    setSelectedProvince(null);
+    setSelectedDistrict(null);
+    setSelectedWard(null);
+    setDistricts([]);
+    setWards([]);
+    fetchDevices();
+  } catch (err: any) {
+    const msg =
+      err?.response?.data?.message ||
+      (err?.response?.status === 500 ? 'Lỗi server, vui lòng thử lại.' : 'Không thể thêm thiết bị.');
+    setFormError(msg);
+    setTimeout(() => setFormError(''), 4000);
+  }
+};
+
 
   // ================= BỘ LỌC =================
   const filteredDevices = devices.filter((d) => {
@@ -156,7 +238,76 @@ export function DeviceManagement() {
                       </SelectContent>
                     </Select>
                   </div>
+                 {/* Tỉnh / Thành phố */}
+                    <div>
+                      <Label>Tỉnh / Thành phố</Label>
+                      <Select
+                        value={selectedProvince ? String(selectedProvince.code) : ''}
+                        onValueChange={handleProvinceChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Chọn tỉnh/thành" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {provinces.map((p) => (
+                            <SelectItem key={p.code} value={String(p.code)}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
+                    {/* Quận / Huyện */}
+                    <div>
+                      <Label>Quận / Huyện</Label>
+                      <Select
+                        value={selectedDistrict ? String(selectedDistrict.code) : ''}
+                        onValueChange={handleDistrictChange}
+                        disabled={!selectedProvince}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={selectedProvince ? 'Chọn quận/huyện' : 'Chọn tỉnh trước'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {districts.map((d) => (
+                            <SelectItem key={d.code} value={String(d.code)}>
+                              {d.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Xã / Phường */}
+                    <div>
+                      <Label>Xã / Phường</Label>
+                      <Select
+                        value={selectedWard ? String(selectedWard.code) : ''}
+                        onValueChange={handleWardChange}
+                        disabled={!selectedDistrict}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={selectedDistrict ? 'Chọn xã/phường' : 'Chọn quận/huyện trước'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {wards.map((w) => (
+                            <SelectItem key={w.code} value={String(w.code)}>
+                              {w.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {/* Hiển thị preview địa chỉ */}
+                      <p className="text-xs text-slate-500 mt-1">
+                        Địa chỉ: {[selectedWard?.name, selectedDistrict?.name, selectedProvince?.name]
+                          .filter(Boolean)
+                          .join(', ') || 'Chưa chọn'}
+                      </p>
+                    </div>
+
+            
                   <div>
                     <Label>Mô tả</Label>
                     <Textarea
